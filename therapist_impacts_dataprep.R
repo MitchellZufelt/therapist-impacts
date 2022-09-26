@@ -584,12 +584,6 @@ write_csv(therapist_demographics,"C:/Users/mitch/OneDrive/Desktop/cleaned_talksp
 rm(audio_message,clients,diagnoses,live_video,message_counts,mult_client,outcomes,photo_message,therapists,video_message)
 memory.limit(size = 1000000000)
 
-#remove any record where client ID is missing.
-therapy14_16 <- therapy14_16[!is.na(therapy14_16$user_id),]
-therapy17_19 <- therapy17_19[!is.na(therapy17_19$user_id),]
-therapy19_20 <- therapy19_20[!is.na(therapy19_20$user_id),]
-therapy20_21 <- therapy20_21[!is.na(therapy20_21$user_id),]
-
 #append all together and sort
 therapy <- rbind.fill(therapy14_16,therapy17_19,therapy19_20,therapy20_21)
 therapy <- therapy %>% arrange(room_id,user_id,therapist_id)
