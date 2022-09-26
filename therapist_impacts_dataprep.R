@@ -536,6 +536,10 @@ for (i in 2:ncol(diagnoses)) {
   diagnoses[,i] <- ifelse(is.na(diagnoses[,i]),0,diagnoses[,i])
 }
 
+for (i in 2:ncol(diagnoses)) {
+  diagnoses[,i] <- ifelse(diagnoses[,i]!=0,1,diagnoses[,i])
+}
+
 rm(d1,d2,d3,d4,d)
 
 #make diagnosis variable names Stata-manageable. Condition names tracked in data dictionary
@@ -559,6 +563,13 @@ for (i in 10:18) {
   therapist_demographics[,i] <- ifelse(therapist_demographics[,i]=="TRUE",1,0)
 }
 
+#clarify variable names
+therapist_demographics <- therapist_demographics %>% rename(
+  therapist_dob = date_of_birth,
+  therapist_pro_degree = professional_degree,
+  therapist_gender = gender
+)
+
 #parse expertise variable (NOTE: decided just to drop this variable for now. Doesn't seem very useful--but revisit this in case I am wrong
   #expertise <- therapist_demographics$expertise
   #expertise_split <- str_split(expertise,fixed(","),simplify = TRUE)
@@ -581,12 +592,18 @@ write_csv(therapist_demographics,"C:/Users/mitch/OneDrive/Desktop/cleaned_talksp
 
 ###### Final Clean and Merge Together #####
 
-rm(audio_message,clients,diagnoses,live_video,message_counts,mult_client,outcomes,photo_message,therapists,video_message)
+rm(audio_message,clients,live_video,message_counts,mult_client,outcomes,photo_message,therapists,video_message)
 memory.limit(size = 1000000000)
 
-#append all together and sort
+#append all years together and sort
 therapy <- rbind.fill(therapy14_16,therapy17_19,therapy19_20,therapy20_21)
 therapy <- therapy %>% arrange(room_id,user_id,therapist_id)
+
+#merge in therapist demographics
+therapy <- left_join(therapy,therapist_demographics, by = "therapist_id")
+
+#merge in diagnoses
+therapy <- left_join(therapy,diagnoses, by = "user_id")
 
 #export complete dataset
 write_csv(therapy,"C:/Users/mitch/OneDrive/Desktop/cleaned_talkspace_data/therapy_full.csv")
