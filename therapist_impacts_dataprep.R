@@ -20,13 +20,30 @@
 #       - MediaMessgCounts2017-19.csv
 #       - MessageCounts2017-19.csv
 #       - Outcomes2017-2019.csv
-#
-#   (...)
 # 
+#   - Dec2019 to midJune 202: a folder containing the following 6 files
+#         - Demogs Dec2019-midJune 2020.csv
+#         - Diagnoses Dec2019-midJune 2020.csv
+#         - LiveVideo Dec2019-midJune 2020.csv
+#         - MediaMessages Dec2019-midJune 2020.csv
+#         - Outcomes Dec2019-midJune 2020.csv
+#         - WordCounts Dec2019-midJune 2020.csv
+#       
+#     - Jan2020 - Apr2021: a folder containing the following 6 files
+# #       - Demogs Jan2020-Apr2021.csv
+#         - Diagnoses Jan2020-Apr2021.csv
+#         - LiveVideo Jan2020-Apr2021.csv
+#         - MediaMessages Jan2020-Apr2021.csv
+#         - Outcomes Jan2020-Apr2021.csv
+#         - WordCounts Jan2020-Apr2021.csv
+#
+#     - therapist_demographics.xlsx
+#         
 ########################################################>
 
 #####Initialize#####
 #Libraries
+library(plyr)
 library(tidyverse)
 library(data.table)
 library(readxl)
@@ -498,23 +515,7 @@ therapy19_20 <- full_join(therapy19_20,outcomes,by=c("room_id"="room_id","therap
 
 ##584,606 survey observations in 62,431 rooms
 
-
-
-
-
-
-#######
-
-
-#we have 6 separate files, keep em sep for now and look at em closer next week.Check that they're good then you can combine together. 
-#revisit 2019-2020 data to see if we're missing anything important from there #ALSO, need to think about how to address roll-over in treatment between datasets (eg, from 2016-2017)
-
-#####Combine into one file####
-rm(audio_message,clients,diagnoses,live_video,message_counts,mult_client,outcomes,photo_message,therapists,video_message)
-memory.limit(size = 1000000000)
-therapy <- rbind.fill(therapy14_16,therapy17_19,therapy20_21) #2,856,917
-
-
+##### remaining data to clean: Diagnoses and therapist demographics #####
 
 #import diagnoses
 d1 <- read.csv("1-1-2014 to 12-31-2016 Data/Diagnoses2014-16.csv") %>% select(c("user_id","condition")) 
@@ -547,17 +548,51 @@ for (val in 2:ncol(diagnoses)) {
 }
 names(diagnoses) <- x
 
-#diagnoses dataset contains 261410 unique-to-client records and is ready for merge
+#diagnoses dataset contains 261,410 unique-to-client records and is ready for merge
 
 
 #import therapist demographics
-therapist_demographics <- read_excel("therapist_demographics.xlsx") %>% select(-c("...1"))
+therapist_demographics <- read_excel("therapist_demographics.xlsx") %>% select(-c("...1")) %>% filter(!is.na(therapist_id))
 
 #convert format on indicator variables
 for (i in 10:18) {
   therapist_demographics[,i] <- ifelse(therapist_demographics[,i]=="TRUE",1,0)
 }
 
-#parse expertise variable (NLP-ish?)
+#parse expertise variable (NOTE: decided just to drop this variable for now. Doesn't seem very useful--but revisit this in case I am wrong
+  #expertise <- therapist_demographics$expertise
+  #expertise_split <- str_split(expertise,fixed(","),simplify = TRUE)
+therapist_demographics <- therapist_demographics %>% select(-"expertise")
 
-#therapist_demographics contains __ unique-to-therapist records and is (almost) ready to merge
+
+#therapist_demographics contains 8,320 unique-to-therapist records and is ready to merge
+
+
+
+##### Export cleaned datasets ####
+write_csv(therapy14_16,"C:/Users/mitch/OneDrive/Desktop/cleaned_talkspace_data/therapy14_16.csv")
+write_csv(therapy17_19,"C:/Users/mitch/OneDrive/Desktop/cleaned_talkspace_data/therapy17_19.csv")
+write_csv(therapy19_20,"C:/Users/mitch/OneDrive/Desktop/cleaned_talkspace_data/therapy19_20.csv")
+write_csv(therapy20_21,"C:/Users/mitch/OneDrive/Desktop/cleaned_talkspace_data/therapy20_21.csv")
+write_csv(diagnoses,"C:/Users/mitch/OneDrive/Desktop/cleaned_talkspace_data/diagnoses.csv")
+write_csv(therapist_demographics,"C:/Users/mitch/OneDrive/Desktop/cleaned_talkspace_data/therapist_demographics.csv")
+
+
+
+###### Final Clean and Merge Together #####
+
+rm(audio_message,clients,diagnoses,live_video,message_counts,mult_client,outcomes,photo_message,therapists,video_message)
+memory.limit(size = 1000000000)
+
+#remove any record where client ID is missing.
+therapy14_16 <- therapy14_16[!is.na(therapy14_16$user_id),]
+therapy17_19 <- therapy17_19[!is.na(therapy17_19$user_id),]
+therapy19_20 <- therapy19_20[!is.na(therapy19_20$user_id),]
+therapy20_21 <- therapy20_21[!is.na(therapy20_21$user_id),]
+
+#append all together and sort
+therapy <- rbind.fill(therapy14_16,therapy17_19,therapy19_20,therapy20_21)
+therapy <- therapy %>% arrange(room_id,user_id,therapist_id)
+
+#export complete dataset
+write_csv(therapy,"C:/Users/mitch/OneDrive/Desktop/cleaned_talkspace_data/therapy_full.csv")
