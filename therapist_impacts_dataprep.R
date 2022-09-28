@@ -556,8 +556,12 @@ names(diagnoses) <- x
 
 
 #import therapist demographics
-therapist_demographics <- read_excel("therapist_demographics.xlsx",col_types = "text") %>% 
-    select(-c("...1")) %>% filter(!is.na(therapist_id))
+therapist_demographics <- read_excel("therapist_demographics.xlsx", 
+                                     col_types = c("skip", "numeric", "date", 
+                                                   "text", "date", "text", "text", "text", 
+                                                   "text", "text", "text", "text", "text", 
+                                                   "text", "text", "text", "text", "text", 
+                                                   "text", "skip")) %>% filter(!is.na(therapist_id))
 
 #convert format on indicator variables
 for (i in 10:18) {
