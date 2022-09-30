@@ -39,6 +39,9 @@ merge m:1 user_id using "diagnoses.dta"
 keep if _merge != 2
 drop _merge
 
+
+*** CLEAN DATA ***
+
 *Replace missing diagnoses with 0
 forvalues i = 1/705 {
 		replace cond`i' = 0 if cond`i' == .
@@ -65,13 +68,6 @@ replace total_char_count_uncanned_therap = 0 if missing(total_char_count_uncanne
 replace distinct_days_uncanned_therapist = 0 if missing(distinct_days_uncanned_therapist)
 replace first_time = 0 if missing(first_time)
 
-
-*Drop irrelevant variables
-drop *payfirst
-
-*Order variables intuitively
-order therapist_id room_id user_id user_room_survey_id survey_id overall_score om_scale_id scale_score created_at completed_at
-sort therapist_id room_id user_id
 
 *Some rooms are missing text data. Fill this out using existing data within those rooms
 bysort room_id (user_id) : replace user_id = user_id[_n-1] if user_id=="NA" 
@@ -135,37 +131,73 @@ bys room_id : egen placehold = max(distinct_days_client)
 replace distinct_days_client = placehold
 drop placehold
 
-
-*Establish panel and time vars
-egen panelid = group(therapist_id room_id)
-order panelid
-
-//Put created_at and completed_at (the assessment times) into date format
+*Put created_at and completed_at (the assessment times) into date format
 gen created_survey = clock(created_at, "YMD hms")
 format created_survey %tc
 gen completed_survey = clock(completed_at, "YMD hms")
 format completed_survey %tc
 
-//Gen period: time between survey administrations
-bysort room_id created_survey : gen period = created_survey - completed_survey[_n-1]
-
-sort room_id created_survey
-gen period = created_survey - completed_survey[_n-1]
-replace period = 0 if room_id != room_id[_n-1]
-
-NOT QUITE THERE BUT CLOSE 
+*Drop irrelevant variables
+drop *payfirst
 
 
-//Think: what do you want our time var to be?
+*Order variables intuitively
+order therapist_id room_id user_id user_room_survey_id survey_id overall_score om_scale_id scale_score created_at completed_at
+sort therapist_id room_id user_id
 
 
-//Set panel data
-xtset panelid 
-
-
-
-
+*Save file: Full and clean.
 save "therapy.dta", replace
+
+
+*** BEGIN VA ESTIMATION ***
+
+*Restrict to survey_id == 2 (second most ubiquitous survey_id in dataset)
+use "therapy.dta", clear
+keep if survey_id == 2  //YO SHOULD I BE GOING DOWN TO THE survey_id lvl or the om_scale_id lvl????
+
+*Restrict to complete data (15,074 obs of 664 therapists, 2,355 clients, 2,457 rooms, and 6,211 survey admins)
+drop if plan_name == "NA" | plan_name == "NULL" 
+drop if gender_customer == "NA" | gender_customer == "NULL"
+drop if education_level == "NA" | education_level == "NULL"
+drop if ethnicity == "NA" | ethnicity == "NULL"
+drop if marital_status == "NA" | marital_status == "NULL"
+drop if age_customer == "NA" | age_customer == "NULL"
+drop if therapist_type == "NA" | therapist_type == "NULL"
+drop if therapist_dob == "NA" | therapist_dob == "NULL"
+drop if therapist_gender == "NA" | therapist_gender == "NULL"
+drop if therapist_experience == "NA" | therapist_experience == "NULL"
+drop if license_type == "NA" | license_type == "NULL"
+drop if user_room_survey_id == "NA" | user_room_survey_id == "NULL"  
+
+
+*Define panel var
+egen panel_id = group(therapist_id room_id)
+
+
+
+**Define time var: count of how many times the therapist has administered the survey to the client in that room (i.e., is this the first, second, third time... etc)
+gen time_var = 1, after(user_room_survey_id)
+
+forvalues i = 1/100 {
+	bys panel_id: replace time_var = time_var[_n-1] + 1 if user_room_survey_id != user_room_survey_id[_n-1]
+	replace time_var = 1 if time_var == .
+	by panel_id: replace time_var = time_var[_n-1] if user_room_survey_id == user_room_survey_id[_n-1] & time_var != time_var[_n-1]
+}
+
+
+*Collapse to remove repeat time_vars within user_room_survey_id
+(need to address survey_id vs om_scale_id first)
+
+**Establish as panel data
+order panel_id time_var
+xtset panel_id time_var
+ 
+ 
+ 
+
+
+save "analysis_1.dta", replace
 
 
 *** FIRST PASS AT ANALYSIS ***
@@ -221,4 +253,46 @@ missingness exists in
 	license_type 43.11%
 	
 	user_room_survey_id and all outcomes data 
+	
+	
+. tab survey_id, sort
+
+  survey_id |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         27 |    915,560       31.17       31.17
+          2 |    713,370       24.28       55.45
+         10 |    324,114       11.03       66.49
+          9 |    302,097       10.28       76.77
+          4 |    197,790        6.73       83.50
+          1 |    156,636        5.33       88.84
+          6 |     57,738        1.97       90.80
+         14 |     56,490        1.92       92.72
+          8 |     39,990        1.36       94.09
+         15 |     35,400        1.21       95.29
+         22 |     34,158        1.16       96.45
+         24 |     29,140        0.99       97.45
+         20 |     21,078        0.72       98.16
+         26 |     18,524        0.63       98.79
+         18 |     16,858        0.57       99.37
+         17 |      6,267        0.21       99.58
+          3 |      5,313        0.18       99.76
+         21 |      2,555        0.09       99.85
+         16 |      1,570        0.05       99.90
+         12 |      1,473        0.05       99.95
+         25 |        664        0.02       99.97
+         23 |        644        0.02      100.00
+         19 |         63        0.00      100.00
+         11 |         31        0.00      100.00
+         13 |          4        0.00      100.00
+------------+-----------------------------------
+      Total |  2,937,527      100.00
+
+	
+	
+	//Gen period: time between survey administrations
+sort panel_id created_survey
+gen placehold = 0, after(user_room_survey_id)
+by panel_id : replace placehold = created_survey - created_survey[_n-1] if user_room_survey_id != user_room_survey_id[_n-1]
+replace placehold = 0 if placehold == .
+bys panel_id user_room_survey_id: egen period = max(placehold) //great. note: a very right-skewed variable
 
