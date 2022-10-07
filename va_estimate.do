@@ -132,17 +132,17 @@ replace distinct_days_client = placehold
 drop placehold
 
 *Put created_at and completed_at (the assessment times) into date format
-gen created_survey = clock(created_at, "YMD hms")
-format created_survey %tc
-gen completed_survey = clock(completed_at, "YMD hms")
-format completed_survey %tc
+gen created_survey = date(created_at, "YMD hms")
+format created_survey %td
+gen completed_survey = date(completed_at, "YMD hms")
+format completed_survey %td
 
 *Drop irrelevant variables
 drop *payfirst
 
 
 *Order variables intuitively
-order therapist_id room_id user_id user_room_survey_id survey_id overall_score om_scale_id scale_score created_at completed_at
+order therapist_id room_id user_id user_room_survey_id survey_id overall_score om_scale_id scale_score created_survey completed_survey
 sort therapist_id room_id user_id
 
 
@@ -152,9 +152,11 @@ save "therapy.dta", replace
 
 *** BEGIN VA ESTIMATION ***
 
+**Establishing panel data analysis sample
+
 *Restrict to survey_id == 2 (second most ubiquitous survey_id in dataset)
 use "therapy.dta", clear
-keep if survey_id == 2  //YO SHOULD I BE GOING DOWN TO THE survey_id lvl or the om_scale_id lvl????
+keep if survey_id == 2  
 
 *Restrict to complete data (15,074 obs of 664 therapists, 2,355 clients, 2,457 rooms, and 6,211 survey admins)
 drop if plan_name == "NA" | plan_name == "NULL" 
@@ -169,130 +171,57 @@ drop if therapist_gender == "NA" | therapist_gender == "NULL"
 drop if therapist_experience == "NA" | therapist_experience == "NULL"
 drop if license_type == "NA" | license_type == "NULL"
 drop if user_room_survey_id == "NA" | user_room_survey_id == "NULL"  
+//keep if country == "US" //SHOULD I KEEP THIS RESTRICTION?
 
+****This below should work, following CFR and BHKS. Will likely want to check it against Stepner computations, however.
+*therapist_id is panel. What about time_var?
+*Hb this: First, create one outcome var per client: overall assessment score gains.
+*Keep only first and last assessment outcome per therapist-client match
+bys therapist_id room_id : egen initial = min(created_survey)
+bys therapist_id room_id : egen final = max(created_survey) 
+keep if created_survey == initial | created_survey == final
 
-*Define panel var
-egen panel_id = group(therapist_id room_id)
+sort therapist_id room_id user_room_survey_id created_survey
+drop if user_room_survey_id == user_room_survey_id[_n-1]
+drop if user_id == user_id[_n-1] & created_survey == created_survey[_n-1] //Fix an issue where a few had two surveys created at the same time
 
+*Generate variable with overall improvement in assessment score from first time to last time
+gen placehold = 0
+replace placehold = overall_score if created_survey == initial
+bys therapist_id room_id: egen first_score = max(placehold)
 
+replace placehold = 0
+replace placehold = overall_score if created_survey == final
+bys therapist_id room_id: egen final_score = max(placehold)
 
-**Define time var: count of how many times the therapist has administered the survey to the client in that room (i.e., is this the first, second, third time... etc)
-gen time_var = 1, after(user_room_survey_id)
+gen overall_improvement = final_score - first_score
 
-forvalues i = 1/100 {
-	bys panel_id: replace time_var = time_var[_n-1] + 1 if user_room_survey_id != user_room_survey_id[_n-1]
-	replace time_var = 1 if time_var == .
-	by panel_id: replace time_var = time_var[_n-1] if user_room_survey_id == user_room_survey_id[_n-1] & time_var != time_var[_n-1]
-}
+*Keep one row per client; include info on survey dates and time elapsed
+bys therapist_id room_id : egen first_survey = min(created_survey)
+keep if created_survey != first_survey
+rename created_survey last_survey
+gen time_elapsed = last_survey - first_survey, after(last_survey)
 
+*Drop irrelevant vars
+drop overall_score om_scale_id scale_score placehold 
 
-*Collapse to remove repeat time_vars within user_room_survey_id
-(need to address survey_id vs om_scale_id first)
+*Make format human-readable
+format first_survey %td
+format last_survey %td
 
-**Establish as panel data
-order panel_id time_var
-xtset panel_id time_var
- 
- 
- 
+*Generate time variable (time_var): count of which ordinal # client this is for the therapist during their time on the platform
+gen time_var = 1, 
+sort therapist_id last_survey
+by therapist_id : replace time_var = time_var[_n-1] + 1 if time_var <= time_var[_n-1] & therapist_id == therapist_id[_n-1]
 
+*Rearrange to reasonable order
+order therapist_id time_var room_id user_id user_room_survey_id survey_id overall_improvement first_survey last_survey 
 
+*Establish panel
+rename therapist_id t_id
+encode t_id, gen(therapist_id)
+drop t_id
+xtset therapist_id time_var
+
+*Save analysis_1
 save "analysis_1.dta", replace
-
-
-*** FIRST PASS AT ANALYSIS ***
-
-
-
-
-
-
-
-///MISSINGNESS ISSUES: A first-pass consideration
-
-drop if plan_name == "NA" | plan_name == "NULL" 
-drop if gender_customer == "NA" | gender_customer == "NULL"
-drop if education_level == "NA" | education_level == "NULL"
-drop if ethnicity == "NA" | ethnicity == "NULL"
-drop if marital_status == "NA" | marital_status == "NULL"
-drop if age_customer == "NA" | age_customer == "NULL"
-drop if therapist_type == "NA" | therapist_type == "NULL"
-drop if therapist_dob == "NA" | therapist_dob == "NULL"
-drop if therapist_gender == "NA" | therapist_gender == "NULL"
-drop if therapist_experience == "NA" | therapist_experience == "NULL"
-drop if license_type == "NA" | license_type == "NULL"
-
-//down to 50,815 obs
-
-drop if user_room_survey_id == "NA" | user_room_survey_id == "NULL"
-
-//down to 39,272 obs ft 4,784 clients with 466 therapists
-
-keep if survey_id == 9
-
-//this gives us 26,004 observations with 3,805 clients and 119 therapists 
-
-
-/*
-
-missingness exists in         
-	plan_name 37.77%
-	gender_customer 34.94%
-	education_level 58.84%%
-	ethnicity 93.29%
-	marital_status 41.8%
-	country 3% (not concerned)
-	state 10% (not concerned)
-	age_customer 74.79%
-	
-	therapist_type 39%   
-	therapist_dob 64.25%
-	therapist_pro_degree 75.63%
-	therapist_gender 39.08%
-	therapist_experience 39.31%
-	license_type 43.11%
-	
-	user_room_survey_id and all outcomes data 
-	
-	
-. tab survey_id, sort
-
-  survey_id |      Freq.     Percent        Cum.
-------------+-----------------------------------
-         27 |    915,560       31.17       31.17
-          2 |    713,370       24.28       55.45
-         10 |    324,114       11.03       66.49
-          9 |    302,097       10.28       76.77
-          4 |    197,790        6.73       83.50
-          1 |    156,636        5.33       88.84
-          6 |     57,738        1.97       90.80
-         14 |     56,490        1.92       92.72
-          8 |     39,990        1.36       94.09
-         15 |     35,400        1.21       95.29
-         22 |     34,158        1.16       96.45
-         24 |     29,140        0.99       97.45
-         20 |     21,078        0.72       98.16
-         26 |     18,524        0.63       98.79
-         18 |     16,858        0.57       99.37
-         17 |      6,267        0.21       99.58
-          3 |      5,313        0.18       99.76
-         21 |      2,555        0.09       99.85
-         16 |      1,570        0.05       99.90
-         12 |      1,473        0.05       99.95
-         25 |        664        0.02       99.97
-         23 |        644        0.02      100.00
-         19 |         63        0.00      100.00
-         11 |         31        0.00      100.00
-         13 |          4        0.00      100.00
-------------+-----------------------------------
-      Total |  2,937,527      100.00
-
-	
-	
-	//Gen period: time between survey administrations
-sort panel_id created_survey
-gen placehold = 0, after(user_room_survey_id)
-by panel_id : replace placehold = created_survey - created_survey[_n-1] if user_room_survey_id != user_room_survey_id[_n-1]
-replace placehold = 0 if placehold == .
-bys panel_id user_room_survey_id: egen period = max(placehold) //great. note: a very right-skewed variable
-
