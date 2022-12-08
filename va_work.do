@@ -36,29 +36,10 @@ xtreg zscore i.gender_customer i.education_level i.ethnicity i.marital_status i.
 *Eq. 2: Predict residuals.
 predict resid, residual
 
-use "to_work_with.dta", clear
-order user_id monthyear therapist_id completed_survey
-sort therapist_id monthyear
 *Therapist VA: Calculate each therapist's average effect in each monthyear period 
-//AY so I'm thinkin to make quarterly estimates (instead of monthly) as these may be more useful in a business setting anyway, and would perhaps allow us to be more precise since there is less variance in cohort size/meetingness over 3 months than in just one. Specifically, I might construct quarterly estimates as an inverse-variance weighted average of monthly estimates, as in BHKS. Or I could just adjust everything I've done to this point up to quarters... but let's see what works better.
-//Less variance = more precision!
-gen quarter = quarter(created_survey), after(monthyear)
-egen quarteryear = group(year quarter)
-order user_id monthyear quarteryear therapist_id completed_survey
-//bys therapist_id monthyear : gen cohort = _N, after(therapist_id)
 bys therapist_id monthyear: egen mnthyr_mean_resid = mean(resid) 
 	//collapsing to monthyear now, but could collapse further to quarters and precision-weight by monthyear cohorts. Note that larger cohorts DO equal more obs, but might also have a detrimental effect on quality, bc larger cohorts stretch the therapist thinner. Things to think about.
-	
-bys therapist_id monthyear: egen mnthyr_var_resid = sd(resid)
-replace mnthyr_var_resid = mnthyr_var_resid^2
-gen inv_mvr = 1/mnthyr_var_resid
-gen weighted_mmr = inv_mvr * mnthyr_mean_resid
 
-bys therapist_id quarteryear : egen qmr = total(weighted_mmr)
-bys therapist_id quarteryear : egen totalvar = total(inv_mvr)
-replace qmr = qmr/totalvar
-
-order user_id monthyear quarteryear therapist_id resid mnthyr_mean_resid mnthyr_var_resid inv_mvr weighted_mmr qmr num_clients obs survey_id zscore
 	
 *Save Naive estimates. (Not naive, though; really more of an actual estimate rather than a predicted one)
 //order user_id monthyear therapist_id num_clients obs survey_id mnthyr_mean_resid zscore
