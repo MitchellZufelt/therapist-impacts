@@ -12,6 +12,17 @@ drop if _merge == 2
 sort therapist_id user_id
 order user_id monthyear therapist_id num_clients obs survey_id overall_score zscore
 drop _merge
+
+/*
+*Create variables that will be useful for regression.
+bys monthyear: egen mean_z_score = mean(zscore)
+by monthyear: egen mean_first_score = mean(first_score)
+sort user_id monthyear
+by user_id : gen assess_num = _n
+
+drop if num_clients == 1
+*/
+
 save "to_work_with.dta", replace
 
 /*********************************
@@ -20,20 +31,37 @@ save "to_work_with.dta", replace
 xtset therapist_id
 
 *Eq. 1: Estimate model of client assessment scores using client characteristics + therapist fixed effects
-xtreg zscore i.gender_customer i.education_level i.ethnicity i.marital_status i.country i.state i.age_customer i.plan_name first_time first_score zscore_lag, fe 
-	//Note: we ought to explore alternative specifications here to see what combination of variables/polynomials produces the best fit.
-	//will estimates of therapist fixed effect be meaningful for therapists with only one client? Hard to get a feel for a therapists FE with only one ob to look at... removing num_clients == 1 might improve estimates
+xtreg zscore i.gender_customer i.education_level i.ethnicity i.marital_status i.country i.state i.age_customer i.plan_name first_time zscore_lag, fe 
 	
 *Eq. 2: Predict residuals.
 predict resid, residual
 
-
+use "to_work_with.dta", clear
+order user_id monthyear therapist_id completed_survey
+sort therapist_id monthyear
 *Therapist VA: Calculate each therapist's average effect in each monthyear period 
+//AY so I'm thinkin to make quarterly estimates (instead of monthly) as these may be more useful in a business setting anyway, and would perhaps allow us to be more precise since there is less variance in cohort size/meetingness over 3 months than in just one. Specifically, I might construct quarterly estimates as an inverse-variance weighted average of monthly estimates, as in BHKS. Or I could just adjust everything I've done to this point up to quarters... but let's see what works better.
+//Less variance = more precision!
+gen quarter = quarter(created_survey), after(monthyear)
+egen quarteryear = group(year quarter)
+order user_id monthyear quarteryear therapist_id completed_survey
+//bys therapist_id monthyear : gen cohort = _N, after(therapist_id)
 bys therapist_id monthyear: egen mnthyr_mean_resid = mean(resid) 
-	//collapsing to monthyear now, but could collapse further to quarters and precision-weight by monthyear cohorts. Note that larger cohorts DO equal more obs, but might also have a detrimental effect on quality, bc larger cohorts stretch the therapist thinner. Things to think about. 
+	//collapsing to monthyear now, but could collapse further to quarters and precision-weight by monthyear cohorts. Note that larger cohorts DO equal more obs, but might also have a detrimental effect on quality, bc larger cohorts stretch the therapist thinner. Things to think about.
+	
+bys therapist_id monthyear: egen mnthyr_var_resid = sd(resid)
+replace mnthyr_var_resid = mnthyr_var_resid^2
+gen inv_mvr = 1/mnthyr_var_resid
+gen weighted_mmr = inv_mvr * mnthyr_mean_resid
+
+bys therapist_id quarteryear : egen qmr = total(weighted_mmr)
+bys therapist_id quarteryear : egen totalvar = total(inv_mvr)
+replace qmr = qmr/totalvar
+
+order user_id monthyear quarteryear therapist_id resid mnthyr_mean_resid mnthyr_var_resid inv_mvr weighted_mmr qmr num_clients obs survey_id zscore
 	
 *Save Naive estimates. (Not naive, though; really more of an actual estimate rather than a predicted one)
-order user_id monthyear therapist_id num_clients obs survey_id mnthyr_mean_resid zscore
+//order user_id monthyear therapist_id num_clients obs survey_id mnthyr_mean_resid zscore
 save "tva_ests.dta", replace
 	
 *BOOM. There's your VA ests. Great work. There are a couple things to really fine tune to improve them (namely, specification in Eq. 1 and weighted collapse in part 2), but you've got the basics to start with. But say you're trying to predict VA for a time period that you don't have yet... (you would do this in practice, or in this lil test I'm gonna administer) In this case, you would want to use past scores adjusted for drift in quality over time. We have a method for that, below. 
@@ -106,13 +134,14 @@ merge m:1 therapist_id monthyear using "auto_tva_ests_base.dta"
 
 *Evaluate differences between predictions and actuals. T-Tests may be useful?
 gen diff = pred_tva - actual_improvement, after(mnthyr_mean_resid) //diff between predicted VA and actual outcome
-gen diff2 = mnthyr_mean_resid - actual_improvement, after(diff) //diff between actual VA and actual outcome
+gen diff2 = mnthyr_mean_resid - actual_improvement, after(diff) //diff between actual VA and actual outcme
 gen diff3 = pred_tva - mnthyr_mean_resid, after(diff2) //diff between predicted VA and actual VA
 
 ttest pred_tva == actual_improvement
 ttest mnthyr_mean_resid == actual_improvement
 ttest pred_tva == mnthyr_mean_resid
 
+sum diff*, detail
 
 
 ***2: Application Test--predict the VA to client i joining the platform with therapist j in monthyear t***
@@ -148,7 +177,7 @@ drop if monthyear >= 52 //Pretend with me: it is monthyear 52
 xtset therapist_id
 
 *Eq. 1
-xtreg zscore i.gender_customer i.education_level i.ethnicity i.marital_status i.country i.state i.age_customer i.plan_name first_time first_score zscore_lag, fe 
+xtreg zscore i.gender_customer i.education_level i.ethnicity i.marital_status i.country i.state i.age_customer i.plan_name first_time zscore_lag, fe 
 
 *Eq. 2
 predict resid, residual
@@ -203,8 +232,8 @@ keep if monthyear == 52
 merge 1:m therapist_id using "monthyear52.dta" 
 gen diff = gains_52 - pred_tva 
 sum diff, detail //This seems to be saying that about 80% of our predictions are within .3 SD of the actual... sounds good right? 
-ttest pred_tva == gains_52 //Statistically insignificant differences!! Unless unpaired...
-hist diff
+ttest pred_tva == gains_52, unpaired //Statistically insignificant differences!! Unless unpaired...
+scalar pval_52 = r(p)
 
 sum diff, detail
 scalar p10_52 = r(p10)
@@ -213,10 +242,10 @@ scalar p90_52 = r(p90)
 
 
 
-/* 
+/*
 *****************************************
 *Can be replicated for any period in the data
-forvalues i = 50/60 {
+forvalues k = 50/60 {
 	use "auto_tva_ests_base.dta", replace
 	keep therapist_id monthyear mnthyr_mean_resid pred_tva
 
@@ -224,47 +253,47 @@ forvalues i = 50/60 {
 	drop if _merge == 2
 
 	sort therapist_id user_id monthyear
-
+	
 	*Let's pick an arbitrary monthyear for which we have a decent amount of values: `i'
 	gen temp = 0
-	replace temp = 1 if monthyear == `i'
+	replace temp = 1 if monthyear == `k'
 	
-	bys user_id : egen on_`i' = max(temp)
+	bys user_id : egen on_`k' = max(temp)
 	save "temp.dta", replace
 	
-	keep if on_`i' == 1
+	keep if on_`k' == 1
 	sort user_id monthyear
-	by user_id : gen gains_`i' = zscore - zscore[_n-1], after(zscore)
-	keep if monthyear == `i'
-	keep therapist_id monthyear user_id gains_`i' on_`i'
-	save "monthyear`i'.dta", replace
+	by user_id : gen gains_`k' = zscore - zscore[_n-1], after(zscore)
+	keep if monthyear == `k'
+	keep therapist_id monthyear user_id gains_`k' on_`k'
+	save "monthyear`k'.dta", replace
 
 	use "temp.dta", clear
-	drop if monthyear >= `i' //Pretend with me: it is monthyear `i'
+	drop if monthyear >= `k' //Pretend with me: it is monthyear `k'
 
-
-	*Predict each therapist's VA in monthyear `i'
+	
+	*Predict each therapist's VA in monthyear `k'
 	
 	xtset therapist_id
 
 	*Eq. 1
-	xtreg zscore i.gender_customer i.education_level i.ethnicity i.marital_status i.country i.state i.age_customer i.plan_name first_time first_score zscore_lag, fe 
+	xtreg zscore i.gender_customer i.education_level i.marital_status i.country i.state i.age_customer i.plan_name first_time first_score zscore_lag, fe
 
 	*Eq. 2
 	predict resid, residual
 
 	*Therapist VA: Calculate each therapist's average effect in each monthyear period 
-	bys therapist_id monthyear: egen mnthyr_mean_resid_`i' = mean(resid) 
-	order user_id monthyear therapist_id num_clients obs survey_id mnthyr_mean_resid_`i' zscore
+	bys therapist_id monthyear: egen mnthyr_mean_resid_`k' = mean(resid) 
+	order user_id monthyear therapist_id num_clients obs survey_id mnthyr_mean_resid_`k' zscore
 
 	*Bring in data to predict on
-	append using "monthyear`i'.dta"
+	append using "monthyear`k'.dta"
 
 	*Now make preds adjusted for drift
-	keep therapist_id monthyear mnthyr_mean_resid_`i' on_`i'
+	keep therapist_id monthyear mnthyr_mean_resid_`k' on_`k'
 	sort therapist_id monthyear
 	drop if monthyear == monthyear[_n-1] & therapist_id == therapist_id[_n-1]
-	bys therapist_id : egen N = count(therapist_id) //number of months therapist was active in
+	bys therapist_id : egen N = count(therapist_id) //number of months therapist was active in 
 
 	*Create lag/lead variables 
 	sort therapist_id monthyear
@@ -297,25 +326,27 @@ forvalues i = 50/60 {
 	gen pred_tva = lag1*lg1 + lag2*lg2 + lag3*lg3 + lag4*lg4 + lag5*lg5 + lag6*lg6 + lag7*lg7 + lag8*lg8 + lag9*lg9 + lag10*lg10 + lag11*lg11 + lag12*lg12 + lag13*lg13 + lead1*ld1 + lead2*ld2 + lead3*ld3 + lead4*ld4 + lead5*ld5 + lead6*ld6 + lead7*ld7 + lead8*ld8 + lead9*ld9 + lead10*ld10 + lead11*ld11 + lead12*ld12 + lead13*ld13
   
 	order therapist_id monthyear mnthyr_mean_resid pred_tva 
-	keep therapist_id monthyear mnthyr_mean_resid_`i' pred_tva on_`i'
-	keep if monthyear == `i'
+	keep therapist_id monthyear mnthyr_mean_resid_`k' pred_tva on_`k'
+	keep if monthyear == `k'
 
-	merge 1:m therapist_id using "monthyear`i'.dta" 
-	gen diff = gains_`i' - pred_tva 
-	sum diff, detail //This seems to be saying that about 80% of our predictions are within .3 SD of the actual... sounds good right? 
-	ttest pred_tva == gains_`i' //Statistically insignificant differences!! Unless unpaired...
-	hist diff
+	merge 1:m therapist_id using "monthyear`k'.dta" 
+	gen diff = gains_`k' - pred_tva 
 
+	ttest pred_tva == gains_`k' //Statistically insignificant differences!! Unless unpaired...
+	scalar tval_`k' = r(p)
+	
 	sum diff, detail
-	scalar p10_`i' = r(p10)
-	scalar p90_`i' = r(p90)
+	scalar p10_`k' = r(p10)
+	scalar p90_`k' = r(p90)
 }
 
 forvalues i = 50/60 {
+	di "pval for " `i' " is " tval_`i'
 	di p10_`i'
-	di p90_`i'
+	di p90_`i' 
 }
 */
+
 
 
 ***3: CFR-Style Bias Checks***
@@ -327,7 +358,7 @@ merge m:m therapist_id monthyear using "to_work_with.dta"
 keep if _merge == 3
 	
 *Naive estimate assuming random assignment
-xtreg zscore pred_tva  //B = 1-coefficient on VA preds
+//xtreg zscore pred_tva  //B = 1-coefficient on VA preds
 	
 *Better estimate given consistently non-random assignment
 *Keep records where t-2 assessment scores are available
