@@ -155,6 +155,9 @@ save "therapy.dta", replace
 
 use "therapy.dta", clear
 
+bys user_id: egen N = count(user_id)
+drop if N < 2
+
 *We will need to specifiy which data to use for our analysis sample. //
 	*Several sub-samples could be used to test for robustness. //
 	*For simplicity, for now:
@@ -173,7 +176,7 @@ gen year = year(completed_survey)
 egen monthyear = group(year month)
 order user_id monthyear
 
-*Some instances where a client too >1 survey in a monthyear period. For now: Just keep the month's average outcome when there's more than one survey in a month. (May want to revisit this.)
+*Some instances where a client took >1 survey in a monthyear period. For now: Just keep the month's average outcome when there's more than one survey in a month. (May want to revisit this.)
 sort user_id monthyear
 gen placehold = 0
 replace placehold =1 if user_id == user_id[_n-1] & monthyear == monthyear[_n-1]
@@ -222,14 +225,39 @@ xtreg zscore i.gender_customer i.education_level i.ethnicity i.marital_status i.
 														//check the distribution of each variable (two way w zscore)
 														//and yo fixed effects for year/month?
 														
-predict fitted
-gen resid = zscore - fitted, after(zscore)
+predict fitted // maybe replace fitted = fitted - _b[_cons]
+gen resid = zscore - fitted, after(zscore) 
+//Or just:
+predict resid, residual
 
 *Step 2: Generate average therapist effect at monthyear level
-bys therapist_id monthyear: egen mnthyr_mean_resid = mean(resid) //collapsing to monthyear now, but could collapse further to quarters and precision-weight by monthyear cohorts (similar to BHKS eq. 3)
+bys therapist_id monthyear: egen mnthyr_mean_resid = mean(resid) //collapsing to monthyear now, but could collapse further to quarters and precision-weight by monthyear cohorts (similar to BHKS eq. 3) (CFR online app A has method for precision-weighting)
 
 *Step 3: Begin to caluclate a prediction for a therapist's VA in any given monthyear by first calculating a "drift" parameter for all the other years in the data. This is done by fitting an OLS regression of the therapists actual average VA in the monthyear we intend to predict on that therapist's actual average VA in each of all other monthyears in the data. 
 //This is not difficult math, but I am not sure how to code it up. Will need to revisit, preferrably with someone better at programming than I am. The .do file by Michael Stepner (associated with CFR project) does something similar to this at about line 254 in that file. Uses mata and stuff.
+
+drop N
+drop if therapist_id == therapist_id[_n-1] & monthyear==monthyear[_n-1]
+bys therapist_id: egen N = count(therapist_id)
+keep if N == 7 //Just seeing if I can figure it out with therapists that had 7 months for now. Should be easily transferrable to counts > 7
+
+keep therapist_id monthyear resid mnthyr_mean_resid
+//predicting 7th mnthyr score:
+gen ptva7 = 0
+replace ptva7 = 1 if therapist_id == therapist_id[_n-1] & therapist_id != therapist_id[_n+1] //each 7th score, which i want to predict, is made = 1
+gen lag6 = mnthyr_mean_resid[_n-6]
+gen lag5 = mnthyr_mean_resid[_n-5]
+gen lag4 = mnthyr_mean_resid[_n-4]
+gen lag3 = mnthyr_mean_resid[_n-3]
+gen lag2 = mnthyr_mean_resid[_n-2]
+gen lag1 = mnthyr_mean_resid[_n-1] //don't forget to use leads as well when estimating ones that arent the last of a set
+
+
+reg mnthyr_mean_resid lag* if ptva7 == 1
+matlist e(b)
+predict fitted if ptva7 == 1
+replace fitted = fitted - _b[_cons] if fitted != .  //this oughta do it, if I'm reading the paper correctly... which I'm not sure I am. Maybe check out CFR online appendix
+		//is this predicted tva supposed to be close to the therapist mnthyr_mean_resid? Is that residual ACTUAL va?
 
 *Step 4: Predict therapist's VA in monthyear t as muhat_jt = (transposed vector of coefficients estimated in Step 3)*(Their associated monthyears)
 
