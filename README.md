@@ -16,7 +16,10 @@ We use the scores clients receive on mental health assessments to construct our 
 
 Of course, there are strengths and weaknesses to our value-added approach. Being necessarily tied to these specific symptom assessments means that our measures of therapist quality will be specific to the conditions being diagnosed with a given assessment, which may overlook ways in which therapists are contributing to their patients’ overall well-being. For example, symptom assessments may be quite poor at measuring productivity and interpersonal relationship health, coping strategies, or therapeutic alliance. These ancillary outcomes are important healthcare outcomes that some therapists might be quite skilled at generating, so a myopic focus on symptom assessment scores may miss these features of therapist quality. One consolation is that these assessments are fairly rich in the number of underlying factors that generate the scores. As an example, the Depression Anxiety Stress Scales (DASS-21) evaluates a patient’s levels of stress, self-confidence, and anxiety, as well as their abilities to cope, to focus, and to relax. As a result, these symptom assessment scores serve as a meaningful proxy for overall mental health and well-being. Additionally, and importantly, we create value-added estimates based on these assessment scores that are unbiased predictors of the actual gains to assessment scores that a client can expect upon being matched to a given therapist. Their usefulness notwithstanding, it should be noted that these assessment score-based measures of therapist value-added are not sufficient to capture every aspect of therapist quality, and are likely best used in concert with other methods of evaluation.
 
-Our dataset, when restricted to GAD-7 outcomes, consists of 110,983 unique clients being served by 4,797 unique therapists.
+Our dataset, when restricted to GAD-7 outcomes, consists of 110,983 unique clients being served by 4,797 unique therapists. A histogram of standardized scores on the GAD-7 (our outcome variable) is displayed below. A higher score indicates greater levels of anxiety and thus poorer mental health.
+
+![zscorehist](https://user-images.githubusercontent.com/58236773/214170324-c8be5f5c-5567-48ce-b427-40341c9c1dcb.jpg)
+
 
 ## Strategy
 
@@ -40,4 +43,4 @@ In order to account for such drift over time, we finalize our estimate for thera
 
 $$ \hat{\mu}_{jt} = \sum_{s=1}^{t-1} \phi_{s} \bar{R}_{js}  $$
 
-where the vector of coefficients $\phi_{s}$ are chosen to minimize the mean squared error of the forecasts from prior assessment scores; these are calculated via a regression of $ \bar{R}_{jt} $ on $ \sum_{s=1}^{t-1} \phi_{s} \bar{R}_{js} $. (Thus, $ \hat{\mu}_{jt} $ are essentially the fitted values from this regression, minus the constant.) 
+where the vector of coefficients $\phi_{s}$ are chosen to minimize the mean squared error of the forecasts from prior assessment scores; these are calculated via a regression of $\bar{R}_{jt}$ on $\sum_{s=1}^{t-1} \phi_{s} \bar{R}_{js}$. (Thus, $\hat{\mu}_{jt}$ are essentially the fitted values from this regression, minus the constant.) 
