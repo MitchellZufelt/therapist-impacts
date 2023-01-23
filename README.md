@@ -26,7 +26,7 @@ We begin by regressing standardized assessment scores on a vector of client char
 
 $$Y_{it} = \beta X_{it}+\mu_{jt}+\epsilon_{it}$$
 
-Where $Y_{it}$ is client $i$'s assessment score in \textit{monthyear} $t$. $X_{it}$ includes controls for client demographic information and, importantly, their past assessment scores. $\mu_{jt}$ is a fixed effect for therapist $j$ in \textit{monthyear} $t$.
+Where $Y_{it}$ is client $i$'s assessment score in $monthyear t$. $X_{it}$ includes controls for client demographic information and, importantly, their past assessment scores. $\mu_{jt}$ is a fixed effect for therapist $j$ in $monthyear t$.
 
 We calculate the residuals from this model according to Equation 2:
 
@@ -34,10 +34,10 @@ $$R_{it}=Y_{it}-\beta X_{it} = \mu_{jt}+\epsilon_{it}$$
 
 Where $R_{it}$ represents residual client assessment scores. Notably, $R_{it}$ is equivalent to therapist effect, $\mu_{jt}$, plus idiosyncratic error $\epsilon_{it}$. This idiosyncratic error is unobserved and assumed to be uncorrelated with either of $\beta X_{it}$ or $\mu_{jt}$.
 
-Next, we calculate each therapist's average effect in each \textit{monthyear} period, $\bar{R}_{jt}$. This could be thought of as a naive estimate of therapist $j$'s VA in \textit{monthyear} $t$, noting only that it does not account for drift in therapist quality over time.
+Next, we calculate each therapist's average effect in each $monthyear$ period, $\bar{R}_{jt}$. This could be thought of as a naive estimate of therapist $j$'s VA in $monthyear t$, noting only that it does not account for drift in therapist quality over time.
 
-In order to account for such drift over time, we finalize our estimate for therapist $j$'s VA in \textit{monthyear} $t$:
+In order to account for such drift over time, we finalize our estimate for therapist $j$'s VA in $monthyear t$:
 
-$$\[ \hat{\mu}_{jt} = \sum_{s=1}^{t-1} \phi_{s} \bar{R}_{js}  \]$$
+$$ \hat{\mu}_{jt} = \sum_{s=1}^{t-1} \phi_{s} \bar{R}_{js}  $$
 
-where the vector of coefficients $\phi_{s}$ are chosen to minimize the mean squared error of the forecasts from prior assessment scores; these are calculated via a regression of $\bar{R}_{jt}$ on $\sum_{s=1}^{t-1} \phi_{s} \bar{R}_{js}$. (Thus, $\hat{\mu}_{jt}$ are essentially the fitted values from this regression, minus the constant.) 
+where the vector of coefficients $\phi_{s}$ are chosen to minimize the mean squared error of the forecasts from prior assessment scores; these are calculated via a regression of $ \bar{R}_{jt} $ on $ \sum_{s=1}^{t-1} \phi_{s} \bar{R}_{js} $. (Thus, $ \hat{\mu}_{jt} $ are essentially the fitted values from this regression, minus the constant.) 
