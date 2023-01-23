@@ -18,8 +18,9 @@ Of course, there are strengths and weaknesses to our value-added approach. Being
 
 Our dataset, when restricted to GAD-7 outcomes, consists of 110,983 unique clients being served by 4,797 unique therapists. A histogram of standardized scores on the GAD-7 (our outcome variable) is displayed below. A higher score indicates greater levels of anxiety and thus poorer mental health.
 
+<p align="center">
 ![zscorehist](https://user-images.githubusercontent.com/58236773/214170324-c8be5f5c-5567-48ce-b427-40341c9c1dcb.jpg)
-
+</p>
 
 ## Strategy
 
